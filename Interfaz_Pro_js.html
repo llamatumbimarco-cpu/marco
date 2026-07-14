@@ -1,0 +1,572 @@
+<script>
+    let rawData = [];
+    let datosMemoria = {};
+    let velocimetro;
+    let chartMateriales;
+    let chartMermaLinea;
+    let chartEficienciaLineas;
+    let chartProduccionLineas;
+  
+    function formatearNumero(v) {
+      return isNaN(v) ? "0" : Number(v).toLocaleString('de-DE');
+    }
+  
+    function inicializarVelocimetro(valor) {
+      velocimetro = new RadialGauge({
+        renderTo: 'gauge-eficiencia',
+        width: 140, height: 140,
+        minValue: 0, maxValue: 100,
+        startAngle: 90, ticksAngle: 180,
+        valueBox: false,
+        colorPlate: "transparent", colorMesh: "transparent",
+        borderShadowWidth: 0, borders: false,
+        needleType: "line", needleWidth: 3,
+        colorNeedle: "#e0e6ed", colorNeedleEnd: "#e0e6ed",
+        strokeTicks: false, fontNumbersSize: 20,
+        colorNumbers: "#8892b0",
+        highlights: [
+          { from: 0,  to: 50,  color: "rgba(231, 76, 60, .15)" },
+          { from: 50, to: 80,  color: "rgba(241, 196, 15, .15)" },
+          { from: 80, to: 100, color: "rgba(46, 204, 113, .2)"  }
+        ],
+        animationRule: "decelerate",
+        animationDuration: 1000,
+        value: valor
+      }).draw();
+    }
+  
+    // ============================================================
+    // CARGA AUTOMÁTICA AL ABRIR
+    // ============================================================
+    window.onload = () => {
+      // 1. Calcular fechas del mes actual automáticamente
+      const hoy = new Date();
+      const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+      document.getElementById('fechaInicioProd').value = primerDiaMes.toISOString().split('T')[0];
+      document.getElementById('fechaFinProd').value    = hoy.toISOString().split('T')[0];
+  
+      // 2. Seleccionar el mes actual en el buscador de desperdicio
+      document.getElementById('busqMes').value = hoy.getMonth() + 1;
+  
+      // 3. Cargar todo en paralelo sin esperar botones
+      cargarClientes();
+      cargarClientesProduccion();
+      actualizarDashboard();
+      adaptarFormularioInsumo();
+      consultarMesLinea();
+      cargarProduccionAutomatica(); // ← NUEVO: carga producción del mes actual
+    };
+  
+    // ============================================================
+    // CARGA AUTOMÁTICA DE PRODUCCIÓN POR LÍNEA (SIN BOTÓN)
+    // ============================================================
+    function cargarProduccionAutomatica() {
+      // Mostrar indicadores de carga en los KPIs de línea
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById(`kpi-linea-${i}`);
+        if (el) { el.innerText = '...'; el.style.color = '#8892b0'; }
+      }
+  
+      const hoy = new Date();
+      const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  
+      const params = {
+        fechaInicio: primerDiaMes.toISOString().split('T')[0],
+        fechaFin:    hoy.toISOString().split('T')[0],
+        linea:       'TODAS',
+        cliente:     '',
+        referencia:  ''
+      };
+  
+      google.script.run
+        .withSuccessHandler(result => {
+          if (result && result.exito) {
+            renderizarResultadosProduccion(result.datos);
+            mostrarResumenKPIs(result.resumen);
+          }
+        })
+        .withFailureHandler(err => {
+          console.error("Error cargando producción:", err);
+        })
+        .obtenerProduccionPorLinea(params);
+    }
+  
+    // ============================================================
+    // CLIENTES
+    // ============================================================
+    function cargarClientes() {
+      google.script.run.withSuccessHandler(c => {
+        document.getElementById('clienteSelect').innerHTML =
+          c.map(cli => `<option>${cli}</option>`).join('');
+      }).obtenerClientes();
+    }
+  
+    function cargarClientesProduccion() {
+      google.script.run.withSuccessHandler(clientes => {
+        const select = document.getElementById('filtroCliente');
+        select.innerHTML = '<option value="">TODOS LOS CLIENTES</option>' +
+          clientes.map(cli => `<option value="${cli}">${cli}</option>`).join('');
+      }).obtenerClientes();
+    }
+  
+    // ============================================================
+    // DESPERDICIO POR LÍNEA (GRÁFICO)
+    // ============================================================
+    function consultarMesLinea() {
+      const hoy   = new Date();
+      const mes   = document.getElementById('busqMes').value || (hoy.getMonth() + 1);
+      const anio  = hoy.getFullYear();
+      const resDiv = document.getElementById('resultadoBusq');
+      resDiv.innerText = "Cargando...";
+  
+      google.script.run.withSuccessHandler(res => {
+        if (!res || !res.exito) { resDiv.innerText = "Sin datos"; return; }
+  
+        const total = (res.values || []).reduce((a, b) => a + (Number(b) || 0), 0);
+        resDiv.innerHTML = `Total mes: <b>${total.toLocaleString('en-US', { minimumFractionDigits: 2 })} kg</b>`;
+  
+        const canvas = document.getElementById('chartMermaLinea');
+        if (!canvas || typeof Chart === 'undefined') return;
+        if (chartMermaLinea) chartMermaLinea.destroy();
+  
+        chartMermaLinea = new Chart(canvas.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: res.labels,
+            datasets: [{
+              label: 'Desperdicio (kg)',
+              data: res.values,
+              backgroundColor: 'rgba(241, 196, 15, 0.65)',
+              borderColor:     'rgba(241, 196, 15, 1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#e0e6ed' } } },
+            scales: {
+              x: { ticks: { color: '#e0e6ed' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+              y: { beginAtZero: true, ticks: { color: '#e0e6ed' }, grid: { color: 'rgba(255,255,255,0.08)' } }
+            }
+          }
+        });
+      }).obtenerMermaPorLinea(mes, anio);
+    }
+  
+    // ============================================================
+    // DASHBOARD PRINCIPAL (OCs + MATERIALES + MERMAS)
+    // ============================================================
+    function actualizarDashboard() {
+      google.script.run.withSuccessHandler(data => {
+        rawData = data;
+        renderizarTablaClientes();
+        document.getElementById('kpi-oc').innerText = data.length;
+  
+        const totalAv = data.reduce((sum, oc) => sum + (Number(oc.avance) || 0), 0);
+        const pctFinal = data.length > 0 ? Math.round((totalAv / data.length) * 100) : 0;
+  
+        if (!velocimetro) inicializarVelocimetro(pctFinal);
+        else velocimetro.value = pctFinal;
+  
+        const txtGigante = document.getElementById('txt-eficiencia-gigante');
+        txtGigante.innerText = pctFinal + "%";
+        txtGigante.style.color =
+          pctFinal < 50 ? "var(--red)" :
+          pctFinal < 80 ? "var(--yellow)" : "var(--green)";
+  
+      }).obtenerReporteProvision();
+  
+      google.script.run.withSuccessHandler(res => {
+        datosMemoria = res;
+        document.getElementById('kpi-consumo').innerText = formatearNumero(res.totalCant);
+  
+        document.getElementById('tablaMateriales').innerHTML = `
+          <tr class="clickable-row" onclick="abrirModalMat('POLI')">
+            <td>Polipropileno (PP)</td>
+            <td style="color:var(--accent)">${res.poli} kg</td>
+            <td style="color:var(--red)">REVISAR STOCK</td>
+          </tr>
+          <tr class="clickable-row" onclick="abrirModalMat('FILM')">
+            <td>Film Stretch</td>
+            <td style="color:var(--accent)">${res.film} kg</td>
+            <td style="color:var(--green)">REVISAR STOCK</td>
+          </tr>
+          <tr class="clickable-row" onclick="abrirModalMat('CARTON')">
+            <td>Cartón</td>
+            <td style="color:var(--accent)">${res.carton} und</td>
+            <td style="color:var(--yellow)">REVISAR STOCK</td>
+          </tr>
+          <tr class="clickable-row" onclick="abrirModalMat('PLA')">
+            <td>PLA</td>
+            <td style="color:var(--green)">${res.plaPuro} kg</td>
+            <td>REVISAR STOCK</td>
+          </tr>
+        `;
+        renderizarGraficoMateriales(res);
+      }).obtenerConsumoMateriales();
+  
+      google.script.run.withSuccessHandler(valor => {
+        const el = document.getElementById('kpi-mermas');
+        if (el) el.innerText = valor;
+      }).obtenerMermaMensual();
+    }
+  
+    // ============================================================
+    // CONSULTA MANUAL (BOTÓN DEL SIDEBAR — sigue funcionando)
+    // ============================================================
+    function consultarProduccionPorLinea() {
+      const btn = event.target;
+      btn.innerText = 'CONSULTANDO...';
+      btn.disabled = true;
+  
+      const params = {
+        periodo:     document.getElementById('periodoProduccion').value,
+        fechaInicio: document.getElementById('fechaInicioProd').value,
+        fechaFin:    document.getElementById('fechaFinProd').value,
+        linea:       document.getElementById('lineaProduccion').value,
+        cliente:     document.getElementById('filtroCliente').value,
+        referencia:  document.getElementById('filtroReferencia').value
+      };
+  
+      google.script.run
+        .withSuccessHandler(result => {
+          if (result.exito) {
+            renderizarResultadosProduccion(result.datos);
+            mostrarResumenKPIs(result.resumen);
+          } else {
+            alert('Error: ' + result.mensaje);
+          }
+          btn.innerText = 'CONSULTAR PRODUCCIÓN';
+          btn.disabled = false;
+        })
+        .obtenerProduccionPorLinea(params);
+    }
+  
+    // ============================================================
+    // KPIs POR LÍNEA
+    // ============================================================
+    function mostrarResumenKPIs(resumen) {
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById(`kpi-linea-${i}`);
+        if (el) { el.innerText = '-'; el.style.color = '#8892b0'; }
+      }
+      resumen.forEach(linea => {
+        const el = document.getElementById(`kpi-linea-${linea.numero}`);
+        if (el) {
+          el.innerText = linea.eficiencia + '%';
+          el.style.color =
+            linea.eficiencia >= 80 ? 'var(--green)' :
+            linea.eficiencia >= 60 ? 'var(--yellow)' : 'var(--red)';
+        }
+      });
+    }
+  
+    // ============================================================
+    // RENDERIZADO DE RESULTADOS
+    // ============================================================
+    function renderizarResultadosProduccion(datos) {
+      renderizarTablaDetalle(datos);
+      renderizarGraficosProduccion(datos);
+    }
+  
+    function renderizarGraficosProduccion(datos) {
+      if (chartEficienciaLineas) chartEficienciaLineas.destroy();
+      chartEficienciaLineas = new Chart(
+        document.getElementById('chartEficienciaLineas').getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: datos.map(d => `Línea ${d.linea}`),
+            datasets: [{
+              label: 'Eficiencia %',
+              data: datos.map(d => d.eficiencia),
+              backgroundColor: datos.map(d =>
+                d.eficiencia >= 80 ? 'rgba(46,204,113,0.65)' :
+                d.eficiencia >= 60 ? 'rgba(241,196,15,0.65)' :
+                                     'rgba(231,76,60,0.65)'),
+              borderColor: datos.map(d =>
+                d.eficiencia >= 80 ? 'rgba(46,204,113,1)' :
+                d.eficiencia >= 60 ? 'rgba(241,196,15,1)' :
+                                     'rgba(231,76,60,1)'),
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true, max: 100,
+                   ticks: { color: '#e0e6ed' }, grid: { color: 'rgba(255,255,255,0.08)' } },
+              x: { ticks: { color: '#e0e6ed' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+            },
+            plugins: { legend: { labels: { color: '#e0e6ed' } } }
+          }
+        }
+      );
+  
+      if (chartProduccionLineas) chartProduccionLineas.destroy();
+      chartProduccionLineas = new Chart(
+        document.getElementById('chartProduccionLineas').getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: datos.map(d => `Línea ${d.linea}`),
+            datasets: [{
+              label: 'Unidades Producidas',
+              data: datos.map(d => d.unidades),
+              backgroundColor: 'rgba(52,152,219,0.65)',
+              borderColor:     'rgba(52,152,219,1)',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true,
+                   ticks: { color: '#e0e6ed' }, grid: { color: 'rgba(255,255,255,0.08)' } },
+              x: { ticks: { color: '#e0e6ed' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+            },
+            plugins: { legend: { labels: { color: '#e0e6ed' } } }
+          }
+        }
+      );
+    }
+  
+    function renderizarTablaDetalle(datos) {
+      const tbody = document.querySelector('#tablaDetalleLineas tbody');
+      if (datos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#8892b0;">Sin datos para este período</td></tr>';
+        return;
+      }
+      tbody.innerHTML = datos.map(d => `
+        <tr class="clickable-row">
+          <td><strong>Línea ${d.linea}</strong></td>
+          <td>${d.ocs}</td>
+          <td style="color:var(--green); font-weight:bold;">${formatearNumero(d.unidades)}</td>
+          <td style="color:${d.eficiencia >= 80 ? 'var(--green)' : d.eficiencia >= 60 ? 'var(--yellow)' : 'var(--red)'}">
+            ${d.eficiencia}%
+          </td>
+          <td>${d.cliente}</td>
+          <td>${d.referencia}</td>
+        </tr>`).join('');
+    }
+  
+    // ============================================================
+    // MATERIALES
+    // ============================================================
+    function adaptarFormularioInsumo() {
+      const tipo = document.getElementById('insumoTipo').value;
+      const contenedor = document.getElementById('camposDinamicosInsumo');
+      const selectProv = document.getElementById('insumoProveedor');
+  
+      const proveedores = {
+        'POLIPROPILENO': ['QUIMASA', 'DISAN'],
+        'FILM':          ['BOPP DEL ECUADOR', 'SIGMAPLAST'],
+        'CARTON':        ['CARTONERA DEL AUSTRO'],
+        'PLA':           ['EMILY', 'CINDY', 'BAMBU', 'BIOSOLUTIONS'],
+        'BIOSPHERE':     ['BYC SA ECUADOR']
+      };
+  
+      selectProv.innerHTML = (proveedores[tipo] || [])
+        .map(p => `<option value="${p}">${p}</option>`).join('');
+  
+      if (tipo === 'FILM') {
+        contenedor.innerHTML = `
+          <div style="display:flex; gap:10px;">
+            <div style="flex:1"><label>CANT (UND)</label><input type="number" id="insumoCantidadUnd"></div>
+            <div style="flex:1"><label>CANT (KG)</label><input type="number" id="insumoCantidadKg"></div>
+          </div>`;
+      } else if (tipo === 'CARTON') {
+        contenedor.innerHTML = `<label>CANTIDAD (UND)</label><input type="number" id="insumoCantidadUnd">`;
+      } else {
+        contenedor.innerHTML = `<label>CANTIDAD (KG)</label><input type="number" id="insumoCantidadKg">`;
+      }
+    }
+  
+    function registrarIngresoInsumo() {
+      const btn = document.querySelector('button[onclick="registrarIngresoInsumo()"]');
+      btn.innerText = "REGISTRANDO...";
+      btn.disabled = true;
+  
+      const d = {
+        tipo:         document.getElementById('insumoTipo').value,
+        codigo:       document.getElementById('insumoCodigo').value,
+        lote:         document.getElementById('insumoLote').value,
+        factura:      document.getElementById('insumoFactura').value,
+        proveedor:    document.getElementById('insumoProveedor').value,
+        cantidad_kg:  document.getElementById('insumoCantidadKg')  ? document.getElementById('insumoCantidadKg').value  : 0,
+        cantidad_und: document.getElementById('insumoCantidadUnd') ? document.getElementById('insumoCantidadUnd').value : 0
+      };
+  
+      google.script.run.withSuccessHandler(res => {
+        alert(res);
+        btn.innerText = "REGISTRAR EN SHEET";
+        btn.disabled = false;
+        ['insumoCodigo','insumoLote','insumoFactura'].forEach(id => {
+          document.getElementById(id).value = "";
+        });
+        if (document.getElementById('insumoCantidadKg'))  document.getElementById('insumoCantidadKg').value  = "";
+        if (document.getElementById('insumoCantidadUnd')) document.getElementById('insumoCantidadUnd').value = "";
+      }).registrarNuevoInsumoInventario(d);
+    }
+  
+    function renderizarGraficoMateriales(res) {
+      if (typeof Chart === 'undefined') return;
+      const canvas = document.getElementById('chartMateriales');
+      if (!canvas) return;
+  
+      const stock   = res.stockCargado || {};
+      const reqData = [toNum(res.poli), toNum(res.film), toNum(res.carton), toNum(res.plaPuro)];
+      const stockData = [
+        Number(stock.POLIPROPILENO || 0),
+        Number(stock.FILM          || 0),
+        Number(stock.CARTON        || 0),
+        Number(stock.PLA           || 0)
+      ];
+  
+      if (chartMateriales) chartMateriales.destroy();
+      chartMateriales = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: ['Polipropileno', 'Film', 'Cartón', 'PLA'],
+          datasets: [
+            { label: 'Stock Requerido',   data: reqData,   backgroundColor: 'rgba(52,152,219,0.65)' },
+            { label: 'Stock Disponible',  data: stockData, backgroundColor: 'rgba(46,204,113,0.65)' }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+  
+    // ============================================================
+    // TABLA CLIENTES + MODALES
+    // ============================================================
+    function renderizarTablaClientes() {
+      const ag = rawData.reduce((acc, it) => {
+        const cli = (it.cliente || "").toString().trim();
+        if (!cli) return acc;
+        if (!acc[cli]) acc[cli] = { cant: 0, ocs: 0 };
+        acc[cli].cant += Number(it.producido || 0);
+        acc[cli].ocs  += 1;
+        return acc;
+      }, {});
+  
+      let h = "";
+      for (let cli in ag) {
+        h += `
+          <tr class="clickable-row" onclick="abrirModalOCs('${cli}')">
+            <td><b>${cli}</b></td>
+            <td>${ag[cli].ocs} OCs</td>
+            <td style="color:var(--accent)">${formatearNumero(ag[cli].cant)} Unidades</td>
+            <td><span style="font-size:10px; padding:3px 8px; background:var(--blue); border-radius:4px;">VER DETALLE</span></td>
+          </tr>`;
+      }
+      document.getElementById('tablaClientesUnicos').innerHTML =
+        h || "<tr><td colspan='4'>No hay órdenes activas</td></tr>";
+    }
+  
+    function abrirModalOCs(cliente) {
+      document.getElementById('modalTitulo').innerText = `PRODUCCIÓN REAL (UND): ${cliente}`;
+      const ocs = rawData.filter(it => it.cliente === cliente);
+      let h = "<table><thead><tr><th>OC</th><th>REFERENCIA</th><th>PROGRESO</th><th>UNIDADES REALES</th></tr></thead><tbody>";
+      ocs.forEach(oc => {
+        const pct = Math.round((Number(oc.avance) || 0) * 100);
+        h += `
+          <tr class="clickable-row" onclick="verDetalleProceso('${oc.oc}')">
+            <td>${oc.oc}</td>
+            <td>${oc.referencia}</td>
+            <td>${pct}%</td>
+            <td style="color:var(--green); font-weight:bold;">${formatearNumero(oc.producido)}</td>
+          </tr>`;
+      });
+      document.getElementById('modalCuerpo').innerHTML = h + "</tbody></table>";
+      document.getElementById('modalGral').style.display = "block";
+    }
+  
+    function verDetalleProceso(numOc) {
+      const oc = rawData.find(it => String(it.oc).trim().toUpperCase() === String(numOc).trim().toUpperCase());
+      if (!oc) return;
+      const pct  = Math.round((Number(oc.avance) || 0) * 100);
+      const dias = (oc.diasRestantes !== null && oc.diasRestantes !== undefined) ? oc.diasRestantes : "Pendiente";
+  
+      document.getElementById('modalTitulo').innerText = `SEGUIMIENTO OC: ${numOc}`;
+      document.getElementById('modalCuerpo').innerHTML = `
+        <p style="font-size:0.8rem; color:#8892b0; margin-bottom:15px;">Ref: ${oc.referencia} | Cliente: ${oc.cliente}</p>
+        <div class="status-card active"><span>✅ RECIBIDA</span></div>
+        <div class="status-card ${pct >= 10 ? 'active' : ''}"><span>📅 EN PLANIFICACIÓN</span></div>
+        <div class="status-card ${pct >= 40 ? 'active' : ''}"><span>⚙️ PROGRAMADA</span></div>
+        <div class="status-card ${pct >= 60 ? 'active' : ''}"><span>🚀 INICIO DE PRODUCCIÓN</span></div>
+        <div class="status-card" style="border-left-color:#3498db; background:rgba(52,152,219,0.05); margin-top:15px;">
+          <span>ℹ️ TIEMPO: Quedan <b>${dias}</b> días para la entrega.</span>
+        </div>
+        <div class="progress-container-alt" style="margin-top:20px;">
+          <span class="big-pct">${pct}%</span>
+          <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      document.getElementById('modalGral').style.display = "block";
+    }
+  
+    function abrirModalMat(tipo) {
+      const titulos  = { 'POLI':'DETALLE POLIPROPILENO','FILM':'DETALLE FILM','CARTON':'DETALLE CARTÓN','PLA':'DETALLE PLA' };
+      const keysStock= { 'POLI':'POLIPROPILENO','FILM':'FILM','CARTON':'CARTON','PLA':'PLA' };
+      const stockActual = datosMemoria.stockCargado ? (datosMemoria.stockCargado[keysStock[tipo]] || 0) : 0;
+      const unidad  = (tipo === 'CARTON') ? 'und' : 'kg';
+      const desglose=
+        tipo === 'POLI'   ? datosMemoria.detallePoli :
+        tipo === 'FILM'   ? datosMemoria.detalleFilm :
+        tipo === 'CARTON' ? datosMemoria.detalleCarton :
+                            datosMemoria.detalleMezclaPLA;
+  
+      document.getElementById('modalTitulo').innerText = titulos[tipo];
+      let html = `
+        <div style="background:rgba(52,152,219,0.1); padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid var(--blue); text-align:center;">
+          <span style="color:#8892b0; font-size:0.8rem; text-transform:uppercase;">Stock Bruto (Ingresos)</span>
+          <br><span style="font-size:2rem; font-weight:bold; color:var(--blue);">${stockActual.toLocaleString('de-DE')} ${unidad}</span>
+        </div>
+        <table><thead><tr><th>DESTINO / REF</th><th>CANTIDAD REQUERIDA</th></tr></thead><tbody>`;
+  
+      let hayDatos = false;
+      for (let r in desglose) {
+        html += `<tr><td>${r}</td><td style="color:var(--accent); font-weight:bold;">${Number(desglose[r]).toFixed(2)}</td></tr>`;
+        hayDatos = true;
+      }
+      if (!hayDatos) html += "<tr><td colspan='2'>No hay requerimientos activos</td></tr>";
+  
+      document.getElementById('modalCuerpo').innerHTML = html + "</tbody></table>";
+      document.getElementById('modalGral').style.display = "block";
+    }
+  
+    function cerrarModal() {
+      document.getElementById('modalGral').style.display = "none";
+    }
+  
+    // ============================================================
+    // GUARDAR OC
+    // ============================================================
+    function guardar() {
+      const b = document.querySelector('button[onclick="guardar()"]');
+      b.innerText = "PROCESANDO..."; b.disabled = true;
+  
+      const d = {
+        cliente:      document.getElementById('clienteSelect').value,
+        oc:           document.getElementById('ocNum').value,
+        referencia:   document.getElementById('ref').value,
+        cantidad:     document.getElementById('cant').value,
+        fecha_ingreso:document.getElementById('fechaingreso').value,
+        fecha:        document.getElementById('fechaSolicitada').value
+      };
+  
+      google.script.run.withSuccessHandler(res => {
+        alert(res);
+        b.innerText = "REGISTRAR NUEVA OC"; b.disabled = false;
+        actualizarDashboard();
+      }).registrarOC_DesdeApp(d);
+    }
+  
+    function toNum(v) {
+      const s = String(v ?? '').replace(/,/g, '').replace(/[^\d.-]/g, '');
+      const n = Number(s);
+      return isNaN(n) ? 0 : n;
+    }
+  </script>

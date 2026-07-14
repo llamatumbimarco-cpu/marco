@@ -1,0 +1,246 @@
+<div id="modalGral" class="modal">
+    <div class="modal-content">
+      <h3 id="modalTitulo" style="margin:0; color:var(--accent); text-transform: uppercase;">DETALLES DE OPERACIÓN</h3>
+      <div id="modalCuerpo"></div>
+      <button class="close-btn" onclick="cerrarModal()">CERRAR VENTANA</button>
+    </div>
+  </div>
+  
+  <div class="sidebar">
+    <h2>IMPROEX CIA LTDA</h2>
+    <h2 style="font-size: 0.9rem; border-left-color: var(--yellow);">INDUSTRIAL CUEVA DE LA TORRE</h2>
+    <p style="font-size: 11px; margin-top: -5px; color: #8892b0;">REGISTRO ORDENES DE COMPRA</p>
+  
+    <label>CLIENTE</label>
+    <select id="clienteSelect"></select>
+  
+    <div style="display:flex; gap:10px;">
+      <div style="flex:1"><label>OC / OP</label><input type="text" id="ocNum" placeholder="45000"></div>
+      <div style="flex:1"><label>REFERENCIA</label><input type="text" id="ref"></div>
+    </div>
+  
+    <label>CANTIDAD TOTAL</label>
+    <input type="number" id="cant">
+  
+    <label>FECHA DE INGRESO</label>
+    <input type="date" id="fechaingreso">
+  
+    <label>LEAD TIME (ENTREGA)</label>
+    <input type="date" id="fechaSolicitada">
+  
+    <button class="main-btn" onclick="guardar()">REGISTRAR NUEVA OC</button>
+  
+    <hr style="border:0; border-top:1px dashed #3e4451; margin:20px 0;">
+  
+    <h2 style="color:var(--yellow); border-left-color:var(--yellow); font-size:1rem;">INGRESO MATERIAS PRIMAS</h2>
+  
+    <label>INSUMO</label>
+    <select id="insumoTipo" onchange="adaptarFormularioInsumo()">
+      <option value="POLIPROPILENO">POLIPROPILENO (PP)</option>
+      <option value="FILM">FILM STRETCH</option>
+      <option value="CARTON">CARTÓN</option>
+      <option value="PLA">BIOSPHERE PLA</option>
+      <option value="BIOSPHERE">BIOSPHERE</option>
+    </select>
+  
+    <div style="display:flex; gap:10px;">
+      <div style="flex:1"><label>CÓDIGO</label><input type="text" id="insumoCodigo"></div>
+      <div style="flex:1"><label>LOTE</label><input type="text" id="insumoLote"></div>
+    </div>
+  
+    <label>N° FACTURA / PROVEEDOR</label>
+    <div style="display:flex; gap:10px;">
+      <div style="flex:1"><input type="text" id="insumoFactura" placeholder="Factura"></div>
+      <div style="flex:1"><select id="insumoProveedor"></select></div>
+    </div>
+  
+    <div id="camposDinamicosInsumo">
+      <label>CANTIDAD (KG)</label>
+      <input type="number" id="insumoCantidadKg">
+    </div>
+  
+    <button class="main-btn" style="background:var(--yellow); color:#000; margin-top:10px;" onclick="registrarIngresoInsumo()">REGISTRAR EN SHEET</button>
+  
+    <hr style="border:0; border-top:1px dashed #3e4451; margin:20px 0;">
+  
+    <h2 style="color:var(--green); border-left-color:var(--green); font-size:1rem;">📊 CONSULTAS PRODUCCIÓN POR LÍNEA</h2>
+  
+    <label>PERÍODO DE CONSULTA</label>
+    <select id="periodoProduccion">
+      <option value="diario">DIARIO</option>
+      <option value="semanal">SEMANAL</option>
+      <option value="mensual" selected>MENSUAL</option>
+    </select>
+  
+    <div style="display:flex; gap:10px;">
+      <div style="flex:1"><label>FECHA INICIO</label><input type="date" id="fechaInicioProd"></div>
+      <div style="flex:1"><label>FECHA FIN</label><input type="date" id="fechaFinProd"></div>
+    </div>
+  
+    <label>LÍNEA DE PRODUCCIÓN</label>
+    <select id="lineaProduccion">
+      <option value="TODAS">TODAS LAS LÍNEAS</option>
+      <option value="1">LÍNEA 1</option>
+      <option value="2">LÍNEA 2</option>
+      <option value="3">LÍNEA 3</option>
+      <option value="4">LÍNEA 4</option>
+    </select>
+  
+    <label>FILTRAR POR CLIENTE (OPCIONAL)</label>
+    <select id="filtroCliente">
+      <option value="">TODOS LOS CLIENTES</option>
+    </select>
+  
+    <label>FILTRAR POR REFERENCIA (OPCIONAL)</label>
+    <input type="text" id="filtroReferencia" placeholder="Ingrese referencia...">
+  
+    <button class="main-btn" style="background:var(--green); margin-top:15px;" onclick="consultarProduccionPorLinea()">CONSULTAR PRODUCCIÓN</button>
+  </div>
+  
+  <div class="main-content">
+    <div class="kpi-container">
+      <div class="kpi-card" style="border-left: 5px solid var(--blue);">
+        <div class="kpi-val" id="kpi-oc">-</div>
+        <div class="kpi-label">OC en Ejecución</div>
+      </div>
+  
+      <div class="kpi-card" style="border-left: 5px solid var(--red); flex-direction: row; justify-content: space-around; padding: 10px;">
+        <div style="width: 140px;">
+          <canvas id="gauge-eficiencia"></canvas>
+        </div>
+        <div style="text-align: center; border-left: 1px solid #3e4451; padding-left: 15px;">
+          <div id="txt-eficiencia-gigante" style="font-size: 2.8rem; font-weight: 800; color: var(--accent);">0%</div>
+          <div class="kpi-label" style="font-size: 0.7rem;">EFICIENCIA NETA</div>
+        </div>
+      </div>
+  
+      <div class="kpi-card" style="border-left: 5px solid var(--green);">
+        <div class="kpi-val" id="kpi-consumo">-</div>
+        <div class="kpi-label">CANTIDAD PROVISIONADA</div>
+      </div>
+    </div>
+  
+    <div class="dashboard-grid">
+      <div class="main-left">
+        <div class="data-card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 style="margin:0;">📊 RESUMEN POR CLIENTE</h4>
+            <span style="font-size: 0.75rem; color: var(--accent); background: rgba(52, 152, 219, 0.1); padding: 4px 10px; border-radius: 4px;">
+              UNIDADES REALES (BASE_CAJAS)
+            </span>
+          </div>
+  
+          <table>
+            <thead>
+              <tr><th>CLIENTE</th><th>CANT. OCs</th><th>TOTAL UNIDADES</th><th>ESTADO</th></tr>
+            </thead>
+            <tbody id="tablaClientesUnicos"></tbody>
+          </table>
+        </div>
+  
+        <div class="data-card" style="border-left: 5px solid var(--blue);">
+          <h4 style="margin:0; color:var(--accent)">🔍 BUSCADOR DE DESPERDICIO MENSUAL</h4>
+  
+          <div class="search-box">
+            <select id="busqMes">
+              <option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option>
+              <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+              <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+              <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+            </select>
+  
+            <select id="busqLinea">
+              <option value="GLOBAL">TODA LA PLANTA (GLOBAL)</option>
+              <option value="1">LÍNEA 1</option><option value="2">LÍNEA 2</option>
+              <option value="3">LÍNEA 3</option><option value="4">LÍNEA 4</option>
+            </select>
+  
+            <button class="search-btn" onclick="consultarMesLinea()">CONSULTAR</button>
+          </div>
+  
+          <div id="resultadoBusq" style="margin-top:10px; font-weight:bold; color:var(--yellow); font-size:1.1rem;">-</div>
+          <div style="height:220px; margin-top:10px;">
+            <canvas id="chartMermaLinea"></canvas>
+          </div>
+        </div>
+      </div>
+  
+      <div class="main-right">
+        <div class="data-card" style="border-left: 5px solid var(--yellow);">
+          <div style="display:flex; justify-content: space-between; align-items:center;">
+            <h4 style="margin:0; color:var(--yellow)">📦 MATERIAS PRIMAS</h4>
+            <div style="background: rgba(231, 76, 60, 0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--red);">
+              <span style="font-size: 0.8rem; color: var(--red); font-weight: bold;">
+                DESPERDICIO (MARZO): <span id="kpi-mermas">0.00</span>
+              </span>
+            </div>
+          </div>
+  
+          <table style="margin-top:10px;">
+            <thead>
+              <tr><th>INSUMO</th><th>STOCK REQUERIDO</th><th>ALERTA</th></tr>
+            </thead>
+            <tbody id="tablaMateriales"></tbody>
+          </table>
+        </div>
+  
+        <div class="data-card" style="margin-top: 20px;">
+          <h4 style="margin:0; color:var(--accent)">GRÁFICO DE STOCK</h4>
+          <div style="height: 260px; margin-top: 10px;">
+            <canvas id="chartMateriales"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  
+    <!-- NUEVA SECCIÓN DE ANÁLISIS DE PRODUCCIÓN POR LÍNEA -->
+    <div class="data-card" style="margin-top:20px; border-left:5px solid var(--green);">
+      <h4 style="margin:0; color:var(--green);">🏭 ANÁLISIS DE PRODUCCIÓN POR LÍNEA</h4>
+      
+      <div id="resumenProduccion" style="display:grid; grid-template-columns:repeat(4,1fr); gap:15px; margin:20px 0;">
+        <!-- KPIs por línea se cargarán aquí -->
+        <div class="kpi-card" style="border-left:5px solid #3498db;">
+          <div class="kpi-val" id="kpi-linea-1">-</div>
+          <div class="kpi-label">LÍNEA 1</div>
+        </div>
+        <div class="kpi-card" style="border-left:5px solid #e74c3c;">
+          <div class="kpi-val" id="kpi-linea-2">-</div>
+          <div class="kpi-label">LÍNEA 2</div>
+        </div>
+        <div class="kpi-card" style="border-left:5px solid #f1c40f;">
+          <div class="kpi-val" id="kpi-linea-3">-</div>
+          <div class="kpi-label">LÍNEA 3</div>
+        </div>
+        <div class="kpi-card" style="border-left:5px solid #2ecc71;">
+          <div class="kpi-val" id="kpi-linea-4">-</div>
+          <div class="kpi-label">LÍNEA 4</div>
+        </div>
+      </div>
+      
+      <div style="display:flex; gap:20px; margin-top:20px;">
+        <div style="flex:1;">
+          <h5 style="color:var(--accent); margin:0 0 10px 0;">Eficiencia Comparativa</h5>
+          <div style="height:250px;"><canvas id="chartEficienciaLineas"></canvas></div>
+        </div>
+        <div style="flex:1;">
+          <h5 style="color:var(--accent); margin:0 0 10px 0;">Producción por Línea</h5>
+          <div style="height:250px;"><canvas id="chartProduccionLineas"></canvas></div>
+        </div>
+      </div>
+      
+      <div style="margin-top:20px;">
+        <h5 style="color:var(--accent); margin:0 0 10px 0;">Detalle por Línea</h5>
+        <div style="max-height:300px; overflow-y:auto;">
+          <table id="tablaDetalleLineas">
+            <thead>
+              <tr>
+                <th>LÍNEA</th><th>OCs PROCESADAS</th><th>UNIDADES</th><th>EFICIENCIA</th><th>CLIENTE</th><th>REFERENCIA</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  
